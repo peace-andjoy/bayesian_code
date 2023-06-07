@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "bnn_lenet.py", line 9, in <module>
+    from bayesian.utils.BBBConvmodel_nobias import BBBAlexNet, BBBLeNet, BBB3Conv3FC
+ModuleNotFoundError: No module named 'bayesian'

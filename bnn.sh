@@ -1,0 +1,1 @@
+python bnn_lenet.py --lr=0.001
