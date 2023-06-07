@@ -6,8 +6,8 @@ import torchvision.transforms as transforms
 import torch.utils.data as data
 import torchvision.datasets as dsets
 import os
-from utils.BBBConvmodel_nobias import BBBAlexNet, BBBLeNet, BBB3Conv3FC
-from utils.BBBlayers_nobias import GaussianVariationalInference
+from utils.BBBConvmodel import BBBAlexNet, BBBLeNet, BBB3Conv3FC
+from utils.BBBlayers import GaussianVariationalInference
 import numpy as np
 import scipy.stats
 cuda = torch.cuda.is_available()
