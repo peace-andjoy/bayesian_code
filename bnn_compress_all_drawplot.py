@@ -711,6 +711,7 @@ def test_quantization(quantization_max, strategy):
 strategy = "global"
 
 # %%
+# 已经跑好保存了，所以先注释掉
 # quantizations = [1023, 511, 255, 127, 63, 31, 15, 7, 3, 2, 1]
 # # quantizations = list(range(1, 10)) + [int(round(i)) for i in np.exp(np.linspace(np.log(10), np.log(1023), 50))]
 # mrrs_and_bitlengths_baseline = np.array([
