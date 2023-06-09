@@ -287,12 +287,13 @@ class BBBVGG19(nn.Module):
         # block 1
         self.conv1 = BBBConv2d(inputs, 64, kernel_size=3, stride=1, padding=2)
         self.conv1a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(64)
         )
         self.conv2 = BBBConv2d(64, 64, kernel_size=3, stride=1, padding=2)
         self.conv2a = nn.Sequential(
             nn.ReLU(inplace=True),
-            # nn.BatchNorm2d(192),
+            nn.BatchNorm2d(64),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
@@ -301,69 +302,81 @@ class BBBVGG19(nn.Module):
         self.conv3 = BBBConv2d(64, 128, kernel_size=3, stride=1, padding=1)
         self.conv3a = nn.Sequential(
             nn.ReLU(inplace=True),
-            # nn.BatchNorm2d(384),
+            nn.BatchNorm2d(128)
         )
         self.conv4 = BBBConv2d(128, 128, kernel_size=3, stride=1, padding=1)
         self.conv4a = nn.Sequential(
             nn.ReLU(inplace=True),
-            # nn.BatchNorm2d(256),
+            nn.BatchNorm2d(128),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         # block 3
         self.conv5 = BBBConv2d(128, 256, kernel_size=3, padding=1)
         self.conv5a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(256)
         )
         self.conv6 = BBBConv2d(256, 256, kernel_size=3, padding=1)
         self.conv6a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(256)
         )
         self.conv7 = BBBConv2d(256, 256, kernel_size=3, padding=1)
         self.conv7a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(256)
         )
         self.conv8 = BBBConv2d(256, 256, kernel_size=3, padding=1)
         self.conv8a = nn.Sequential(
             nn.ReLU(inplace=True),
+            nn.BatchNorm2d(256),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         # block 4
         self.conv9 = BBBConv2d(256, 512, kernel_size=3, padding=1)
         self.conv9a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv10 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv10a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv11 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv11a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv12 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv12a = nn.Sequential(
             nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         # block 5
         self.conv13 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv13a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv14 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv14a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv15 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv15a = nn.Sequential(
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512)
         )
         self.conv16 = BBBConv2d(512, 512, kernel_size=3, padding=1)
         self.conv16a = nn.Sequential(
             nn.ReLU(inplace=True),
+            nn.BatchNorm2d(512),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 

@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 import torch.utils.data as data
 import torchvision.datasets as dsets
 import os
-from utils.BBBConvmodel import BBBAlexNet, BBBLeNet, BBB3Conv3FC, BBBVGG16
+from utils.BBBConvmodel import BBBAlexNet, BBBLeNet, BBB3Conv3FC, BBBVGG16, BBBVGG19
 from utils.BBBlayers import GaussianVariationalInference
 import numpy as np
 from scipy.stats import norm, cauchy
@@ -18,19 +18,17 @@ import scipy
 from scipy import stats
 from scipy.optimize import minimize
 import math
+import io
+import gzip
+import bz2
+import lzma
 
 # %%
-batch_size = 32
+batch_size = 64
 lr = 0.001
-dataset = 'MNIST'
-network = 'lenet'
-if dataset == 'MNIST':
-    model = torch.load("../results/{}_withbias_b{}_lr{}_{}.pth".format(network, batch_size, lr, dataset))
-elif dataset == 'CIFAR-10':
-    model = BBBLeNet(outputs=10, inputs=3)
-    model_name = 'lenet5'
-    num_epochs = 50
-    model.load_state_dict(torch.load('../model_with_bias/model{}_param_epoch{}_lr{}_bs{}.pkl'.format(model_name,num_epochs,lr,batch_size), map_location='cpu'))
+dataset = 'CIFAR-10'
+network = 'vgg19'
+epoch = 100
 net = BBBLeNet
 num_samples = 10
 beta_type = "Blundell"
@@ -51,6 +49,15 @@ if net == BBBLeNet or BBB3Conv3FC:
     resize = 32
 elif net == BBBAlexNet:
     resize = 227
+
+if network == "lenet":
+    if epoch != 50:
+        model = torch.load("../results/{}_b{}_lr{}epoch{}_{}.pth".format(network, batch_size, lr, epoch, dataset))
+    else:
+        model = torch.load("../results/{}_b{}_lr{}_{}.pth".format(network, batch_size, lr, dataset))
+elif network == "vgg19":
+    model = BBBVGG19(outputs, inputs)
+    model.load_state_dict(torch.load("../results/NormAddbiasVarBias_{}_modelvgg19_withbias_param_epoch100_lr0.001_bs64.pkl".format(dataset)))
 
 # %%
 '''
@@ -85,32 +92,22 @@ model.state_dict().keys()
 # # 合并weights
 
 # %%
-if network == "lenet" or network == "lenet5":
-    w_name = ['layers.0.qw_', 'layers.3.qw_', 'layers.7.qw_','layers.9.qw_', 'layers.11.qw_']
-    b_name = ['layers.0.qb_', 'layers.3.qb_', 'layers.7.qb_','layers.9.qb_', 'layers.11.qb_']
-elif network == "vgg16":
-    w_name = ['layers.0.qw_', 'layers.2.qw_', 'layers.4.qw_','layers.6.qw_', 'layers.8.qw_', 
-              'layers.10.qw_', 'layers.12.qw_', 'layers.14.qw_', 'layers.16.qw_', 'layers.18.qw_',
-            'layers.20.qw_', 'layers.22.qw_', 'layers.24.qw_', 'layers.27.qw_', 'layers.30.qw_', 'layers.33.qw_']
-    b_name = ['layers.0.qb_', 'layers.2.qb_', 'layers.4.qb_','layers.6.qb_', 'layers.8.qb_', 
-              'layers.10.qb_', 'layers.12.qb_', 'layers.14.qb_', 'layers.16.qb_', 'layers.18.qb_',
-            'layers.20.qb_', 'layers.22.qb_', 'layers.24.qb_', 'layers.27.qb_', 'layers.30.qb_', 'layers.33.qb_']
-
-# %%
 model = model.cpu()
-
-# %%
+if network == "lenet" or network == "lenet5":
+    depths = [0, 3, 7, 9, 11]
+elif network == "vgg16":
+    depths = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33]
+elif network == "vgg19":
+    depths = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26,28,30,33,36,39] # VGG19
+w_name = ['layers.{}.qw_'.format(depth) for depth in depths]
+b_name = ['layers.{}.qb_'.format(depth) for depth in depths]
 whole_w = []
 for (i, j) in zip(w_name, b_name):
     whole_w.append(model.state_dict()['{}mean'.format(i)].numpy().ravel())
     whole_w.append(model.state_dict()['{}mean'.format(j)].numpy().ravel())
 whole_w = np.concatenate(whole_w)
-
-# %%
-len(whole_w)
-
-# %%
-len(whole_w[np.abs(whole_w) <= 1e-2])
+print(len(whole_w))
+print(len(whole_w[np.abs(whole_w) <= 1e-2]))
 
 # %% [markdown]
 # # 神经网络精度计算函数
@@ -208,28 +205,47 @@ def evaluate(loader, cpr_model, epoch=1):
 # 把BNN的weights套进确定性网络，测试精度
 
 # %%
+model = model.cpu()
 uncompressed_list = []
-for (i, j) in zip(w_name, b_name):
+for depth in depths:
+    i = 'layers.{}.qw_'.format(depth)
+    j = 'layers.{}.qb_'.format(depth)
     # w
     vecs_u1 = model.state_dict()['{}mean'.format(i)]
     uncompressed_list.append(vecs_u1)
     # b
-    vecs_u2 = torch.zeros_like(model.state_dict()['{}mean'.format(j)])
+    vecs_u2 = model.state_dict()['{}mean'.format(j)]
     uncompressed_list.append(vecs_u2)
+    #如果是vgg，还要把normalization层的参数加入
+    if network == "vgg19" and depth < 33:
+        para_dict = model.state_dict()
+        temp2 = para_dict['layers.{}.1.weight'.format(depth+1)]
+        uncompressed_list.append(temp2)
+        temp3 = para_dict['layers.{}.1.bias'.format(depth+1)]
+        uncompressed_list.append(temp3)
+        temp4 = para_dict['layers.{}.1.running_mean'.format(depth+1)]
+        uncompressed_list.append(temp4)
+        temp5 = para_dict['layers.{}.1.running_var'.format(depth+1)]
+        uncompressed_list.append(temp5)
+        temp6 = para_dict['layers.{}.1.num_batches_tracked'.format(depth+1)]
+        uncompressed_list.append(temp6)
 
 if network == "lenet":
     # lenet
     from model import lenet
-    cpr_model=lenet(inputs)
+    uncpr_model=lenet(inputs)
 elif network == "vgg16":
     from model import VGG16
-    cpr_model = VGG16(inputs)
-name_uncpr=cpr_model.state_dict().keys()
+    uncpr_model = VGG16(inputs)
+elif network == "vgg19":
+    from model import VGG19
+    uncpr_model=VGG19(inputs = inputs,outputs=outputs)
+name_uncpr=uncpr_model.state_dict().keys()
 uncpr_state_dict = dict(zip(name_uncpr, uncompressed_list))
-cpr_model.load_state_dict(uncpr_state_dict)
+uncpr_model.load_state_dict(uncpr_state_dict)
 # 用压缩后的模型计算loss，acc等
-cpr_model = cpr_model.cuda()
-diagnostics_uncpr_val = evaluate(loader_val, cpr_model=cpr_model)
+uncpr_model = uncpr_model.cuda()
+diagnostics_uncpr_val = evaluate(loader_val, cpr_model=uncpr_model)
 
 # %%
 diagnostics_uncpr_val
@@ -237,15 +253,8 @@ diagnostics_uncpr_val
 # %%
 
 mrrs_and_bitlengths_list = []
-for method in  ["gaussian", "gg", "gmm", "cauchy"]:
-
-    # %% [markdown]
-    # # 用不同的lambda和N压缩
-
-    # %% [markdown]
-    # ## global
-
-    # %%
+for method in ["gaussian", "gg", "gmm", "cauchy"]:
+# for method in ["gaussian"]:
     def compress_coordinates(means, stds, lamb, bitlengths, codepoints):
         # N = len(means.ravel()) = len(stds.ravel())
         # C = len(codepoints)
@@ -263,7 +272,6 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
             optima_lengths.ravel()[i:i+100000] = bitlengths[optima_idxs]
         return optima, optima_lengths
 
-    # %%
     if method == "gaussian":
         # gaussian
         empirical_mean = np.mean(whole_w)
@@ -310,10 +318,10 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
 
         # 定义要尝试的n_components值
         n_min = 2
-        n_components_range = range(n_min, 6)
+        n_components_range = range(n_min, 10)
 
         # 初始化信息准则列表
-        aic_scores = []
+        # aic_scores = []
         bic_scores = []
 
         # 计算每个n_components值上的信息准则值
@@ -348,20 +356,20 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
         # cauchy
         cauchy_loc, cauchy_scale = cauchy.fit(whole_w)
 
-    # %%
     from collections import Counter
     def empirical_entropy(values):
         counts = np.array(list(Counter(values.ravel()).values()))
         total_counts = counts.sum()
         return total_counts * np.log2(total_counts) - counts.dot(np.log2(counts))
 
-    # %%
     model = model.cpu()
     def compress_model(lamb, strategy, max_codepoint_length=10):
         compressed_add_len = 0
         compressed_list = []
         quantized = []
-        for (i, j) in zip(w_name, b_name):
+        for depth in depths:
+            i = 'layers.{}.qw_'.format(depth)
+            j = 'layers.{}.qb_'.format(depth)
             # w
             vecs_u1 = model.state_dict()['{}mean'.format(i)].numpy()
             stds_u1 = np.exp(model.state_dict()['{}logvar'.format(i)].numpy())
@@ -426,23 +434,23 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
                     n_components_range = range(n_min, 6)
 
                     # 初始化信息准则列表
-                    aic_scores = []
+                    bic_scores = []
 
                     # 计算每个n_components值上的信息准则值
                     for n_components in n_components_range:
                         gmm = GaussianMixture(n_components=n_components)
                         gmm.fit(vecs_u.reshape(-1,1))
-                        aic_scores.append(gmm.aic(vecs_u.reshape(-1,1)))
-                        # bic_scores.append(gmm.bic(vecs_u.reshape(-1,1)))
+                        # aic_scores.append(gmm.aic(vecs_u.reshape(-1,1)))
+                        bic_scores.append(gmm.bic(vecs_u.reshape(-1,1)))
 
                     # 选择具有最小信息准则值的n_components值
-                    best_n_components_aic = np.argmin(aic_scores) + n_min
-                    # best_n_components_bic = np.argmin(bic_scores) + n_min
+                    # best_n_components_aic = np.argmin(aic_scores) + n_min
+                    best_n_components_bic = np.argmin(bic_scores) + n_min
 
-                    print("Best n_components (AIC):", best_n_components_aic)
-                    # print("Best n_components (BIC):", best_n_components_bic)
+                    # print("Best n_components (AIC):", best_n_components_aic)
+                    print("Best n_components (BIC):", best_n_components_bic)
 
-                    gmm = GaussianMixture(n_components=best_n_components_aic)
+                    gmm = GaussianMixture(n_components=best_n_components_bic)
                     gmm.fit(vecs_u.reshape(-1,1))
 
                     # 获取每个混合分量的参数（均值、标准差、权重）
@@ -479,6 +487,19 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
             compressed2 = torch.from_numpy(compressed2)
             compressed_list.append(compressed2)
             compressed_add_len += np.sum(cpr_len2)
+            
+            #如果是vgg，还要把normalization层的参数加入（目前是不压缩，后续可尝试均匀量化方法压缩）
+            if network == "vgg19" and depth < 33:
+                temp2 = para_dict['layers.{}.1.weight'.format(depth+1)]
+                compressed_list.append(temp2)
+                temp3 = para_dict['layers.{}.1.bias'.format(depth+1)]
+                compressed_list.append(temp3)
+                temp4 = para_dict['layers.{}.1.running_mean'.format(depth+1)]
+                compressed_list.append(temp4)
+                temp5 = para_dict['layers.{}.1.running_var'.format(depth+1)]
+                compressed_list.append(temp5)
+                temp6 = para_dict['layers.{}.1.num_batches_tracked'.format(depth+1)]
+                compressed_list.append(temp6)
 
         if network == "lenet":
             # lenet
@@ -487,6 +508,9 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
         elif network == "vgg16":
             from model import VGG16
             cpr_model = VGG16(inputs)
+        elif network == "vgg19":
+            from model import VGG19
+            cpr_model = VGG19(inputs=inputs, outputs=outputs)
         name_cpr=cpr_model.state_dict().keys()
         cpr_state_dict = dict(zip(name_cpr, compressed_list))
         cpr_model.load_state_dict(cpr_state_dict)
@@ -495,32 +519,70 @@ for method in  ["gaussian", "gg", "gmm", "cauchy"]:
         diagnostics_cpr_val = evaluate(loader_val, cpr_model=cpr_model)
         acc = diagnostics_cpr_val['acc'].numpy()
         # 计算compressed_AC_len
-        if strategy == "global":
-            quantized = np.concatenate(quantized)
-            compressed_AC_len = empirical_entropy(quantized)
-        elif strategy == "layer-wise":
-            quantized = np.concatenate(quantized)
-            compressed_AC_len = empirical_entropy(quantized)
-            # compressed_AC_len = 0
-            # for _ in quantized:
-            #     compressed_AC_len += empirical_entropy(_)
+        quantized = np.concatenate(quantized)
+        # AC coding
+        print('  AC coding...')
+        compressed_AC_len = empirical_entropy(quantized)
+        # compressed_AC_len是最后用AC再编码，compressed_add_len是直接叠加
+
+        # 获取唯一的标签值
+        unique_labels = np.unique(quantized)
+        # 构建标签映射字典
+        label_map = {label: i for i, label in enumerate(unique_labels)}
+        # 进行整数编码
+        encoded_labels = np.array([label_map[label] for label in quantized])
+        encoded_labels = encoded_labels - int(encoded_labels.max()/2)  # 以0为中心分布
+
+        print('  Converting to bytes ...')
+        if np.abs(encoded_labels).max() <= 127:
+            quantized_bytes = encoded_labels.astype(np.int8)
+        else:
+            quantized_bytes = encoded_labels.astype(np.int16)
+
+        print('  Gzipping ...')
+        buf = io.BytesIO()
+        gz = gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=9)
+        gz.write(bytes(quantized_bytes.data))
+        gz.flush()
+        gz.close()
+        buf.flush()
+        gzip_bitlength = len(buf.getbuffer()) * 8
+
+        print('  Bzip2 ...')
+        buf = io.BytesIO()
+        bz = bz2.BZ2File(buf, mode="wb", compresslevel=9)
+        bz.write(bytes(quantized_bytes.data))
+        bz.flush()
+        bz.close()
+        buf.flush()
+        bz2_bitlength = len(buf.getbuffer()) * 8
+
+        print('  Lzma ...')
+        buf = io.BytesIO()
+        lz = lzma.LZMAFile(buf, mode="wb", preset=9, format=lzma.FORMAT_ALONE)
+        lz.write(bytes(quantized_bytes.data))
+        lz.flush()
+        lz.close()
+        buf.flush()
+        lzma_bitlength = len(buf.getbuffer()) * 8
+
         # compressed_AC_len是最后用AC再编码，compressed_add_len是直接叠加
         print("lamb=", lamb, "max_codepoint_length", max_codepoint_length, "strategy=", strategy)
         print("acc=",acc)
         print("compressed_AC_len",compressed_AC_len)
+        print("compressed_gzip_len",gzip_bitlength)
+        print("compressed_bzip2_len",bz2_bitlength)
+        print("compressed_lzma_len",lzma_bitlength)
         print("compressed_add_len",compressed_add_len)
-        return acc, compressed_AC_len, compressed_add_len
+        return acc, compressed_AC_len, gzip_bitlength, bz2_bitlength, lzma_bitlength, compressed_add_len #, encoded_labels
 
-
-    # %%
     strategy = "global"
 
-    # %% [markdown]
     # # 画acc-bits图
 
-    # %%
-    lambs = np.exp(np.linspace(np.log(0.01), np.log(100000), 50))
-    mrrs_and_bitlengths = np.array([compress_model(lamb, strategy) for lamb in lambs])
+    lambs = np.exp(np.linspace(np.log(0.00001), np.log(1000), 50))
+    # lambs = [0.001]
+    mrrs_and_bitlengths = np.array([compress_model(lamb, strategy, 10) for lamb in lambs])
     mrrs_and_bitlengths_list.append(mrrs_and_bitlengths)
 # %% [markdown]
 # ## baseline
@@ -535,10 +597,6 @@ def quantize_coordinates(means, quantization_max, scale):
 model = model.cpu()
 
 # %%
-import io
-import gzip
-import bz2
-import lzma
 
 def test_quantization(quantization_max, strategy):
     print('quantization_max=%d' % quantization_max)
@@ -546,7 +604,9 @@ def test_quantization(quantization_max, strategy):
     print('  Getting accuracy ...')
     compressed_list = []
     quantized = []
-    for (i, j) in zip(w_name, b_name):
+    for depth in depths:
+        i = 'layers.{}.qw_'.format(depth)
+        j = 'layers.{}.qb_'.format(depth)
         # w
         vecs_u1 = model.state_dict()['{}mean'.format(i)].numpy()
         # b
@@ -571,6 +631,19 @@ def test_quantization(quantization_max, strategy):
         compressed2 = torch.from_numpy(compressed2)
         compressed_list.append(compressed2)
 
+        #如果是vgg，还要把normalization层的参数加入（目前是不压缩，后续可尝试均匀量化方法压缩）
+        if network == "vgg19" and depth < 33:
+            temp2 = para_dict['layers.{}.1.weight'.format(depth+1)]
+            compressed_list.append(temp2)
+            temp3 = para_dict['layers.{}.1.bias'.format(depth+1)]
+            compressed_list.append(temp3)
+            temp4 = para_dict['layers.{}.1.running_mean'.format(depth+1)]
+            compressed_list.append(temp4)
+            temp5 = para_dict['layers.{}.1.running_var'.format(depth+1)]
+            compressed_list.append(temp5)
+            temp6 = para_dict['layers.{}.1.num_batches_tracked'.format(depth+1)]
+            compressed_list.append(temp6)
+
     if network == "lenet" or network == "lenet5":
         # lenet
         from model import lenet
@@ -578,6 +651,9 @@ def test_quantization(quantization_max, strategy):
     elif network == "vgg16":
         from model import VGG16
         cpr_model = VGG16(inputs)
+    elif network == "vgg19":
+        from model import VGG19
+        cpr_model = VGG19(inputs=inputs, outputs=outputs)
     name_cpr=cpr_model.state_dict().keys()
     cpr_state_dict = dict(zip(name_cpr, compressed_list))
     cpr_model.load_state_dict(cpr_state_dict)
@@ -636,69 +712,94 @@ strategy = "global"
 
 # %%
 # quantizations = [1023, 511, 255, 127, 63, 31, 15, 7, 3, 2, 1]
-quantizations = list(range(1, 10)) + [int(round(i)) for i in np.exp(np.linspace(np.log(10), np.log(1023), 50))]
-mrrs_and_bitlengths_baseline = np.array([
-    test_quantization(q, strategy) for q in quantizations])
+# # quantizations = list(range(1, 10)) + [int(round(i)) for i in np.exp(np.linspace(np.log(10), np.log(1023), 50))]
+# mrrs_and_bitlengths_baseline = np.array([
+#     test_quantization(q, strategy) for q in quantizations])
 
 # %%
-from matplotlib.ticker import AutoMinorLocator
-plt.figure(figsize=(8, 6), dpi=300)
-full_acc = 0.6
-plt.axhline(full_acc, linestyle=':', color='#666666', label='uncompressed model')
+# save the results
+import pickle
 
-num_dimensions = len(whole_w)
+# 保存到文件
+with open("../results/{}_{}_mrrs_and_bitlengths_list.pkl".format(dataset, network), "wb") as file:
+    pickle.dump(mrrs_and_bitlengths_list, file)
+# with open("../results/{}_{}_mrrs_and_bitlengths_baseline.pkl".format(dataset, network), "wb") as file:
+#     pickle.dump(mrrs_and_bitlengths_baseline, file)
 
-plt.plot(
-    mrrs_and_bitlengths_list[0][:, 2] / num_dimensions,
-    mrrs_and_bitlengths_list[0][:, 0],
-    '-', label='VBQ(Gaussian)', c='#d95f02')
+# %%
+# from matplotlib.ticker import AutoMinorLocator
+# plt.figure(figsize=(8, 6), dpi=300)
+# full_acc = diagnostics_uncpr_val['acc']
+# plt.axhline(full_acc, linestyle=':', color='#666666', label='uncompressed model')
 
-plt.plot(
-    mrrs_and_bitlengths_list[1][:, 2] / num_dimensions,
-    mrrs_and_bitlengths_list[1][:, 0],
-    '-', label='VBQ(gg)')
+# num_dimensions = len(whole_w)
 
-plt.plot(
-    mrrs_and_bitlengths_list[2][:, 2] / num_dimensions,
-    mrrs_and_bitlengths_list[2][:, 0],
-    '-', label='VBQ(GMM)')
+# plt.plot(
+#     mrrs_and_bitlengths_list[0][:, 5] / num_dimensions,
+#     mrrs_and_bitlengths_list[0][:, 0],
+#     '-', label='VBQ+add(Gaussian)', c='#d95f02')
 
-plt.plot(
-    mrrs_and_bitlengths_list[3][:, 2] / num_dimensions,
-    mrrs_and_bitlengths_list[3][:, 0],
-    '-', label='VBQ(Cauchy)')
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[1][:, 5] / num_dimensions,
+# #     mrrs_and_bitlengths_list[1][:, 0],
+# #     '-', label='VBQ+add(gg)')
 
-plt.plot(
-    mrrs_and_bitlengths[:, 1] / num_dimensions,
-    mrrs_and_bitlengths[:, 0],
-    '-', label='VBQ+AC')
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[2][:, 5] / num_dimensions,
+# #     mrrs_and_bitlengths_list[2][:, 0],
+# #     '-', label='VBQ+add(GMM)')
 
-plt.plot(
-    mrrs_and_bitlengths_baseline[:, -4] / num_dimensions,
-    mrrs_and_bitlengths_baseline[:, 0],
-    '-', label='uniform quant.~+ AC', c='#7570b3')
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[3][:, 5] / num_dimensions,
+# #     mrrs_and_bitlengths_list[3][:, 0],
+# #     '-', label='VBQ+add(Cauchy)')
+
+# plt.plot(
+#     mrrs_and_bitlengths_list[0][:, 1] / num_dimensions,
+#     mrrs_and_bitlengths_list[0][:, 0],
+#     '-', label='VBQ+AC(Gaussian)')
+
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[1][:, 1] / num_dimensions,
+# #     mrrs_and_bitlengths_list[1][:, 0],
+# #     '-', label='VBQ+AC(gg)')
+
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[2][:, 1] / num_dimensions,
+# #     mrrs_and_bitlengths_list[2][:, 0],
+# #     '-', label='VBQ+AC(GMM)')
+
+# # plt.plot(
+# #     mrrs_and_bitlengths_list[3][:, 1] / num_dimensions,
+# #     mrrs_and_bitlengths_list[3][:, 0],
+# #     '-', label='VBQ+AC(Cauchy)')
+
+# plt.plot(
+#     mrrs_and_bitlengths_baseline[:, -4] / num_dimensions,
+#     mrrs_and_bitlengths_baseline[:, 0],
+#     '-', label='uniform quant.~+ AC', c='#7570b3')
 
 
-plt.plot(
-    mrrs_and_bitlengths_baseline[:, -1] / num_dimensions,
-    mrrs_and_bitlengths_baseline[:, 0],
-    '--', label='uniform quant.~+ lzma',  c='#66a61e')
+# plt.plot(
+#     mrrs_and_bitlengths_baseline[:, -1] / num_dimensions,
+#     mrrs_and_bitlengths_baseline[:, 0],
+#     '--', label='uniform quant.~+ lzma',  c='#66a61e')
 
-plt.plot(
-    mrrs_and_bitlengths_baseline[:, -2] / num_dimensions,
-    mrrs_and_bitlengths_baseline[:, 0],
-    '-.', label='uniform quant.~+ bzip2',  c='#e7298a')
+# plt.plot(
+#     mrrs_and_bitlengths_baseline[:, -2] / num_dimensions,
+#     mrrs_and_bitlengths_baseline[:, 0],
+#     '-.', label='uniform quant.~+ bzip2',  c='#e7298a')
 
-plt.plot(
-    mrrs_and_bitlengths_baseline[:, -3] / num_dimensions,
-    mrrs_and_bitlengths_baseline[:, 0],
-     ':', label='uniform quant.~+ gzip', c='#1b9e77')
+# plt.plot(
+#     mrrs_and_bitlengths_baseline[:, -3] / num_dimensions,
+#     mrrs_and_bitlengths_baseline[:, 0],
+#      ':', label='uniform quant.~+ gzip', c='#1b9e77')
 
-plt.xlim(-0.2, 10)
-plt.xlabel('bits per latent dimension')
-plt.ylabel('accuracy')
-lgd = plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1.04), labelspacing=0.5, handlelength=2.2)
-plt.savefig('../results/figure/{}_{}_acc_bits.png'.format(dataset, strategy))
+# # plt.xlim(-0.2, 10)
+# plt.xlabel('bits per latent dimension')
+# plt.ylabel('accuracy')
+# lgd = plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1.04), labelspacing=0.5, handlelength=2.2)
+# plt.savefig('../results/figure/{}_{}_{}_acc_bits.png'.format(dataset, network, strategy))
 
 # %%
 

@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--b', type=int, help="batchsize", default=32)
 parser.add_argument('--lr', type=float, default=1e-3, help="Learning Rate")
 parser.add_argument('--dataset', type=str, default="MNIST", help="Which dataset")
-parser.add_argument('--epoch', type=str, default=50, help="num of epoch")
+parser.add_argument('--epoch', type=int, default=50, help="num of epoch")
 
 args = parser.parse_args()
 
@@ -201,7 +201,7 @@ for epoch in range(num_epochs):
             lf.write(str(diagnostics_val))
 model.state_dict().keys()
 
-torch.save(model, "../results/lenet_b{}_lr{}_{}.pth".format(batch_size, lr, dataset))
+torch.save(model, "../results/lenet_b{}_lr{}epoch{}_{}.pth".format(batch_size, lr, num_epochs, dataset))
 
 # def compress_coordinates(means, stds, beta, bitlengths):
 #     # N = len(means.ravel()) = len(stds.ravel())

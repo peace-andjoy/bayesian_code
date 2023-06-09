@@ -186,3 +186,117 @@ class VGG16(nn.Module):
         out = self.classifier(out)
 #        print(out.shape)
         return out
+
+class VGG19(nn.Module):
+    def __init__(self, inputs,outputs):
+        super(VGG19, self).__init__()
+        self.features = nn.Sequential(
+            #1
+            nn.Conv2d(inputs,64,kernel_size=3,padding=1),
+            nn.ReLU(True),
+            nn.BatchNorm2d(64),
+
+            nn.Conv2d(64,64,kernel_size=3,padding=1),
+            nn.ReLU(True),
+            nn.BatchNorm2d(64),
+            nn.MaxPool2d(kernel_size=2,stride=2),
+
+            #2
+            nn.Conv2d(64,128,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            nn.BatchNorm2d(128),
+
+            nn.Conv2d(128,128,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            nn.BatchNorm2d(128),
+            nn.MaxPool2d(kernel_size=2,stride=2),
+
+            #3
+            nn.Conv2d(128,256,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.BatchNorm2d(256),
+
+            nn.Conv2d(256,256,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.BatchNorm2d(256),
+
+            nn.Conv2d(256,256,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.BatchNorm2d(256),
+
+            nn.Conv2d(256,256,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.BatchNorm2d(256),
+            nn.MaxPool2d(kernel_size=2,stride=2),
+
+            #4
+            nn.Conv2d(256,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+  
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+            nn.MaxPool2d(kernel_size=2,stride=2),
+
+            #5
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+
+            nn.Conv2d(512,512,kernel_size=3,padding=1),
+            # nn.BatchNorm2d(512),
+            nn.ReLU(True),
+            nn.BatchNorm2d(512),
+            nn.MaxPool2d(kernel_size=2,stride=2)
+            )
+        
+        self.classifier = nn.Sequential(
+            # nn.Flatten(512)
+            nn.Linear(512,4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096,outputs),
+            )
+        #self.classifier = nn.Linear(512, 10)
+ 
+    def forward(self, x):
+        out = self.features(x) 
+#        print(out.shape)
+        out = out.view(out.size(0), -1)
+#        print(out.shape)
+        out = self.classifier(out)
+#        print(out.shape)
+        return out
